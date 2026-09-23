@@ -1,0 +1,40 @@
+{
+  "policy_name": "Governed Autonomous Market Agent Policy",
+  "policy_version": "1.0",
+  "operating_mode": "autonomous_sandbox",
+  "allowed_actions": [
+    "read_simulated_market_data",
+    "analyze_market_conditions",
+    "manage_virtual_portfolio",
+    "generate_proposed_social_post",
+    "update_agent_memory",
+    "write_audit_log"
+  ],
+  "approval_required_actions": [
+    "virtual_trade_over_limit",
+    "change_agent_goal",
+    "change_risk_tolerance",
+    "publish_external_content"
+  ],
+  "prohibited_actions": [
+    "use_real_money",
+    "execute_real_financial_transaction",
+    "access_cryptocurrency_wallet",
+    "store_or_request_credentials",
+    "publish_to_public_account_without_approval",
+    "disable_audit_logging",
+    "modify_governing_policy",
+    "execute_operating_system_commands"
+  ],
+  "financial_limits": {
+    "starting_virtual_cash": 100000.0,
+    "maximum_trade_value": 5000.0,
+    "maximum_position_percentage": 20.0
+  },
+  "operational_limits": {
+    "maximum_actions_per_cycle": 3,
+    "minimum_seconds_between_cycles": 60,
+    "audit_every_decision": true,
+    "require_explanation": true
+  }
+}

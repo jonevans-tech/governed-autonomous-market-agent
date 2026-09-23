@@ -1,0 +1,24 @@
+# Python virtual environment
+.venv/
+
+# Python-generated files
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Environment variables and secrets
+.env
+.env.*
+
+# macOS files
+.DS_Store
+
+# Runtime data
+data/state/*
+!data/state/.gitkeep
+
+# Generated logs and reports
+logs/*
+!logs/.gitkeep
+reports/*
+!reports/.gitkeep
