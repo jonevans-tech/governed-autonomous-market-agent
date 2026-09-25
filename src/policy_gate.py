@@ -59,6 +59,14 @@ def evaluate_action(
             policy_version,
         )
 
+    if proposal.get("requires_human_approval") is True:
+        return create_gate_result(
+        proposal,
+        REQUIRE_APPROVAL,
+        "The originating decision requires human approval.",
+        policy_version,
+    )
+
     if action_type == "manage_virtual_portfolio":
         return evaluate_virtual_trade(
             proposal,
