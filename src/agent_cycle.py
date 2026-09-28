@@ -13,6 +13,11 @@ from src.observe_market import (
 from src.policy_gate import evaluate_action
 
 from src.audit_log import append_audit_record
+from src.memory import (
+    load_memory,
+    save_memory,
+    update_memory,
+)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 CYCLE_STATE_PATH = (
@@ -169,10 +174,17 @@ def print_cycle_summary(cycle: dict[str, Any]) -> None:
     print(f"Executed actions: {summary['executed']}")
 
 
+
 def main() -> None:
-  
     cycle = run_agent_cycle()
     save_agent_cycle(cycle)
+
+    memory = load_memory(
+        agent_name=cycle["agent_name"]
+    )
+    memory = update_memory(memory, cycle)
+    save_memory(memory)
+
     audit_record = append_audit_record(cycle)
     print_cycle_summary(cycle)
 
@@ -183,6 +195,10 @@ def main() -> None:
     print(
         "Audit record hash: "
         f"{audit_record['record_hash']}"
+    )
+    print(
+        "Cycles remembered: "
+        f"{memory['total_cycles_remembered']}"
     )
 
 
