@@ -12,6 +12,7 @@ from src.observe_market import (
 )
 from src.policy_gate import evaluate_action
 
+from src.audit_log import append_audit_record
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 CYCLE_STATE_PATH = (
@@ -169,14 +170,20 @@ def print_cycle_summary(cycle: dict[str, Any]) -> None:
 
 
 def main() -> None:
+  
     cycle = run_agent_cycle()
     save_agent_cycle(cycle)
+    audit_record = append_audit_record(cycle)
     print_cycle_summary(cycle)
 
     print()
     print("The autonomous cycle completed safely.")
     print("No financial transactions were executed.")
     print(f"Cycle state saved to: {CYCLE_STATE_PATH}")
+    print(
+        "Audit record hash: "
+        f"{audit_record['record_hash']}"
+    )
 
 
 if __name__ == "__main__":
