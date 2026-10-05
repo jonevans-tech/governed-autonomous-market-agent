@@ -14,10 +14,12 @@ from src.policy_gate import evaluate_action
 
 from src.audit_log import append_audit_record
 from src.memory import (
+    create_empty_memory,
     load_memory,
     save_memory,
     update_memory,
 )
+from src.memory_context import add_memory_context
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 CYCLE_STATE_PATH = (
@@ -105,16 +107,25 @@ def summarize_cycle(
     return summary
 
 
-def run_agent_cycle() -> dict[str, Any]:
+def run_agent_cycle(
+    memory: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """Run one complete governed autonomous-agent cycle."""
     config = load_agent_config()
+    if memory is None:
+        memory = create_empty_memory(
+            config["identity"]["agent_name"]
+        )
     started_at = datetime.now(timezone.utc).isoformat()
 
     market_rows = load_market_history()
     observation = create_market_observation(market_rows)
     decision_report = create_decision_report(observation)
+    decision_report = add_memory_context(
+    decision_report,
+    memory,
+)
     governed_actions = govern_decisions(decision_report)
-
     completed_at = datetime.now(timezone.utc).isoformat()
 
     return {
@@ -161,7 +172,10 @@ def print_cycle_summary(cycle: dict[str, Any]) -> None:
             f"Proposal: {proposal['action_type']} | "
             f"Gate: {gate_result['governance_result']}"
         )
-
+        print(
+            "  Memory: "
+            f"{decision['memory_context']['memory_statement']}"
+        )
     summary = cycle["cycle_summary"]
 
     print()
@@ -174,14 +188,15 @@ def print_cycle_summary(cycle: dict[str, Any]) -> None:
     print(f"Executed actions: {summary['executed']}")
 
 
-
 def main() -> None:
-    cycle = run_agent_cycle()
+    config = load_agent_config()
+    memory = load_memory(
+        agent_name=config["identity"]["agent_name"]
+    )
+
+    cycle = run_agent_cycle(memory)
     save_agent_cycle(cycle)
 
-    memory = load_memory(
-        agent_name=cycle["agent_name"]
-    )
     memory = update_memory(memory, cycle)
     save_memory(memory)
 
