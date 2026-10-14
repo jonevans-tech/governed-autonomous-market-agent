@@ -7,6 +7,7 @@ import math
 import uuid
 from datetime import datetime, timezone
 from typing import Any
+from src.approval_queue import create_proposal_hash
 
 
 EXECUTED = "EXECUTED"
@@ -42,17 +43,24 @@ def is_positive_number(value: Any) -> bool:
 
 def has_valid_human_approval(
     approval_record: Any,
-    symbol: str,
+    proposal: dict[str, Any],
 ) -> bool:
-    """Verify explicit human approval for the proposed trade."""
+    """Verify approval for the exact proposed trade."""
 
     if not isinstance(approval_record, dict):
         return False
+
+    if not isinstance(proposal, dict):
+        return False
+
+    symbol = proposal.get("symbol")
 
     return (
         approval_record.get("approved") is True
         and approval_record.get("approved_by") not in (None, "")
         and approval_record.get("symbol") == symbol
+        and approval_record.get("proposal_hash")
+        == create_proposal_hash(proposal)
     )
 
 
@@ -139,7 +147,7 @@ def execute_virtual_buy(
 
     if not has_valid_human_approval(
         approval_record,
-        symbol,
+        proposal,
     ):
         return original_portfolio, reject_trade(
             "Explicit human approval is required."

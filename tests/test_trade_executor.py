@@ -11,7 +11,7 @@ from src.trade_executor import (
     REJECTED,
     execute_virtual_buy,
 )
-
+from src.approval_queue import create_proposal_hash
 
 @pytest.fixture
 def policy() -> dict:
@@ -55,12 +55,14 @@ def gate_result() -> dict:
 
 
 @pytest.fixture
-def approval_record() -> dict:
-    """Return explicit approval for the virtual trade."""
+def approval_record(proposal: dict) -> dict:
+    """Return explicit approval for the exact virtual trade."""
+
     return {
         "approved": True,
         "approved_by": "Jon Evans",
         "symbol": "MED",
+        "proposal_hash": create_proposal_hash(proposal),
     }
 
 
@@ -339,4 +341,28 @@ def test_sell_order_is_rejected(
     )
 
     assert result["execution_status"] == REJECTED
+    assert updated == portfolio
+
+def test_approval_cannot_be_reused_for_modified_trade(
+    portfolio: dict,
+    proposal: dict,
+    gate_result: dict,
+    approval_record: dict,
+    policy: dict,
+) -> None:
+    """Approval for one amount must not authorize another."""
+
+    proposal["trade_value"] = 4000.0
+
+    updated, result = execute_virtual_buy(
+        portfolio=portfolio,
+        proposal=proposal,
+        gate_result=gate_result,
+        approval_record=approval_record,
+        execution_price=50.0,
+        policy=policy,
+    )
+
+    assert result["execution_status"] == REJECTED
+    assert result["portfolio_updated"] is False
     assert updated == portfolio
