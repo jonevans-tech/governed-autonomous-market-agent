@@ -10,6 +10,14 @@ from src.agent_cycle import (
     summarize_cycle,
 )
 
+from src.agent_cycle import (
+    build_action_proposal,
+    govern_decisions,
+    queue_required_approvals,
+    run_agent_cycle,
+    save_agent_cycle,
+    summarize_cycle,
+)
 
 def make_buy_decision():
     return {
@@ -168,3 +176,117 @@ def test_summary_counts_mixed_gate_results():
         "blocked": 1,
         "executed": 0,
     }
+
+def test_buy_is_added_to_approval_queue():
+    """A governed BUY should create a pending request."""
+
+    decision_report = {
+        "decisions": [
+            make_buy_decision(),
+        ],
+    }
+    governed_actions = govern_decisions(
+        decision_report
+    )
+    cycle = {
+        "governed_actions": governed_actions,
+    }
+    queue = {
+        "schema_version": "1.0",
+        "queue_type": "human_trade_approval",
+        "requests": [],
+    }
+
+    updated_queue, references = (
+        queue_required_approvals(
+            cycle=cycle,
+            queue=queue,
+        )
+    )
+
+    assert len(updated_queue["requests"]) == 1
+    assert updated_queue["requests"][0][
+        "status"
+    ] == "PENDING"
+    assert updated_queue["requests"][0][
+        "proposal"
+    ]["symbol"] == "TST"
+    assert len(references) == 1
+    assert references[0]["new_request"] is True
+
+
+def test_duplicate_buy_reuses_pending_request():
+    """Repeated cycles should not duplicate a pending trade."""
+
+    decision_report = {
+        "decisions": [
+            make_buy_decision(),
+        ],
+    }
+    governed_actions = govern_decisions(
+        decision_report
+    )
+    cycle = {
+        "governed_actions": governed_actions,
+    }
+    queue = {
+        "schema_version": "1.0",
+        "queue_type": "human_trade_approval",
+        "requests": [],
+    }
+
+    first_queue, first_references = (
+        queue_required_approvals(
+            cycle=cycle,
+            queue=queue,
+        )
+    )
+
+    second_queue, second_references = (
+        queue_required_approvals(
+            cycle=cycle,
+            queue=first_queue,
+        )
+    )
+
+    assert len(second_queue["requests"]) == 1
+    assert (
+        second_references[0]["approval_id"]
+        == first_references[0]["approval_id"]
+    )
+    assert second_references[0]["new_request"] is False
+
+
+def test_analysis_action_is_not_added_to_queue():
+    """Ordinary analysis should not request approval."""
+
+    decision_report = {
+        "decisions": [
+            {
+                "symbol": "TST",
+                "proposed_action": "WATCH",
+                "requires_approval": False,
+            },
+        ],
+    }
+    governed_actions = govern_decisions(
+        decision_report
+    )
+    cycle = {
+        "governed_actions": governed_actions,
+    }
+    queue = {
+        "schema_version": "1.0",
+        "queue_type": "human_trade_approval",
+        "requests": [],
+    }
+
+    updated_queue, references = (
+        queue_required_approvals(
+            cycle=cycle,
+            queue=queue,
+        )
+    )
+
+    assert updated_queue["requests"] == []
+    assert references == []

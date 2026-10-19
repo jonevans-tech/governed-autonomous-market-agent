@@ -1,18 +1,24 @@
+"""Run one complete governed Aureus agent cycle."""
+
+from __future__ import annotations
+
+import copy
 import json
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from src.approval_queue import (
+    PENDING,
+    create_proposal_hash,
+    load_approval_queue,
+    save_approval_queue,
+    submit_approval_request,
+)
+from src.audit_log import append_audit_record
 from src.config_loader import load_agent_config
 from src.decision_engine import create_decision_report
-from src.observe_market import (
-    create_market_observation,
-    load_market_history,
-)
-from src.policy_gate import evaluate_action
-
-from src.audit_log import append_audit_record
 from src.memory import (
     create_empty_memory,
     load_memory,
@@ -20,6 +26,12 @@ from src.memory import (
     update_memory,
 )
 from src.memory_context import add_memory_context
+from src.observe_market import (
+    create_market_observation,
+    load_market_history,
+)
+from src.policy_gate import evaluate_action
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 CYCLE_STATE_PATH = (
@@ -34,6 +46,7 @@ def build_action_proposal(
     decision: dict[str, Any],
 ) -> dict[str, Any]:
     """Convert a recommendation into a governed proposal."""
+
     if decision["proposed_action"] == "BUY":
         return {
             "action_type": "manage_virtual_portfolio",
@@ -43,9 +56,11 @@ def build_action_proposal(
             "position_percentage": 2.5,
             "uses_real_money": False,
             "requires_human_approval": decision[
-            "requires_approval"
+                "requires_approval"
             ],
-            "source_decision": decision["proposed_action"],
+            "source_decision": decision[
+                "proposed_action"
+            ],
         }
 
     return {
@@ -55,7 +70,9 @@ def build_action_proposal(
             "proposed_action"
         ],
         "uses_real_money": False,
-        "source_decision": decision["proposed_action"],
+        "source_decision": decision[
+            "proposed_action"
+        ],
     }
 
 
@@ -63,6 +80,7 @@ def govern_decisions(
     decision_report: dict[str, Any],
 ) -> list[dict[str, Any]]:
     """Submit every proposed action to the policy gate."""
+
     governed_actions = []
 
     for decision in decision_report["decisions"]:
@@ -84,6 +102,7 @@ def summarize_cycle(
     governed_actions: list[dict[str, Any]],
 ) -> dict[str, int]:
     """Count the policy-gate outcomes."""
+
     summary = {
         "allowed": 0,
         "approval_required": 0,
@@ -92,7 +111,9 @@ def summarize_cycle(
     }
 
     for item in governed_actions:
-        result = item["gate_result"]["governance_result"]
+        result = item["gate_result"][
+            "governance_result"
+        ]
 
         if result == "ALLOW":
             summary["allowed"] += 1
@@ -107,37 +128,140 @@ def summarize_cycle(
     return summary
 
 
+def queue_required_approvals(
+    cycle: dict[str, Any],
+    queue: dict[str, Any],
+) -> tuple[
+    dict[str, Any],
+    list[dict[str, Any]],
+]:
+    """Submit approval-required virtual trades to the queue."""
+
+    updated_queue = copy.deepcopy(queue)
+    approval_references = []
+
+    for item in cycle["governed_actions"]:
+        proposal = item["proposal"]
+        gate_result = item["gate_result"]
+
+        if (
+            gate_result.get("governance_result")
+            != "REQUIRE_APPROVAL"
+        ):
+            continue
+
+        if (
+            proposal.get("action_type")
+            != "manage_virtual_portfolio"
+        ):
+            continue
+
+        proposal_hash = create_proposal_hash(
+            proposal
+        )
+
+        existing_request = next(
+            (
+                request
+                for request in updated_queue.get(
+                    "requests",
+                    [],
+                )
+                if (
+                    request.get("proposal_hash")
+                    == proposal_hash
+                    and request.get("status") == PENDING
+                )
+            ),
+            None,
+        )
+
+        if existing_request is not None:
+            approval_references.append(
+                {
+                    "approval_id": existing_request[
+                        "approval_id"
+                    ],
+                    "symbol": proposal["symbol"],
+                    "status": PENDING,
+                    "new_request": False,
+                }
+            )
+            continue
+
+        updated_queue, request = (
+            submit_approval_request(
+                queue=updated_queue,
+                proposal=proposal,
+                gate_result=gate_result,
+            )
+        )
+
+        approval_references.append(
+            {
+                "approval_id": request[
+                    "approval_id"
+                ],
+                "symbol": proposal["symbol"],
+                "status": request["status"],
+                "new_request": True,
+            }
+        )
+
+    return updated_queue, approval_references
+
+
 def run_agent_cycle(
     memory: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Run one complete governed autonomous-agent cycle."""
+
     config = load_agent_config()
+
     if memory is None:
         memory = create_empty_memory(
             config["identity"]["agent_name"]
         )
-    started_at = datetime.now(timezone.utc).isoformat()
+
+    started_at = datetime.now(
+        timezone.utc
+    ).isoformat()
 
     market_rows = load_market_history()
-    observation = create_market_observation(market_rows)
-    decision_report = create_decision_report(observation)
+    observation = create_market_observation(
+        market_rows
+    )
+    decision_report = create_decision_report(
+        observation
+    )
     decision_report = add_memory_context(
-    decision_report,
-    memory,
-)
-    governed_actions = govern_decisions(decision_report)
-    completed_at = datetime.now(timezone.utc).isoformat()
+        decision_report,
+        memory,
+    )
+    governed_actions = govern_decisions(
+        decision_report
+    )
+
+    completed_at = datetime.now(
+        timezone.utc
+    ).isoformat()
 
     return {
         "cycle_id": str(uuid4()),
-        "agent_name": config["identity"]["agent_name"],
-        "operating_mode": config["policy"]["operating_mode"],
+        "agent_name": config["identity"][
+            "agent_name"
+        ],
+        "operating_mode": config["policy"][
+            "operating_mode"
+        ],
         "started_at": started_at,
         "completed_at": completed_at,
         "observation": observation,
         "decision_report": decision_report,
         "governed_actions": governed_actions,
-        "cycle_summary": summarize_cycle(governed_actions),
+        "cycle_summary": summarize_cycle(
+            governed_actions
+        ),
     }
 
 
@@ -146,18 +270,30 @@ def save_agent_cycle(
     file_path: Path = CYCLE_STATE_PATH,
 ) -> None:
     """Save the latest autonomous cycle as runtime state."""
-    file_path.parent.mkdir(parents=True, exist_ok=True)
 
-    with file_path.open("w", encoding="utf-8") as file:
+    file_path.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    with file_path.open(
+        "w",
+        encoding="utf-8",
+    ) as file:
         json.dump(cycle, file, indent=2)
 
 
-def print_cycle_summary(cycle: dict[str, Any]) -> None:
+def print_cycle_summary(
+    cycle: dict[str, Any],
+) -> None:
     """Display the important results of one cycle."""
+
     print("Aureus autonomous agent cycle")
     print("=============================")
     print(f"Cycle ID: {cycle['cycle_id']}")
-    print(f"Mode: {cycle['operating_mode']}")
+    print(
+        f"Mode: {cycle['operating_mode']}"
+    )
     print()
 
     for item in cycle["governed_actions"]:
@@ -169,44 +305,113 @@ def print_cycle_summary(cycle: dict[str, Any]) -> None:
             f"{decision['symbol']} | "
             f"Recommendation: "
             f"{decision['proposed_action']} | "
-            f"Proposal: {proposal['action_type']} | "
-            f"Gate: {gate_result['governance_result']}"
+            f"Proposal: "
+            f"{proposal['action_type']} | "
+            f"Gate: "
+            f"{gate_result['governance_result']}"
         )
+
         print(
             "  Memory: "
             f"{decision['memory_context']['memory_statement']}"
         )
+
     summary = cycle["cycle_summary"]
 
     print()
-    print(f"Allowed proposals: {summary['allowed']}")
+    print(
+        f"Allowed proposals: "
+        f"{summary['allowed']}"
+    )
     print(
         "Approval-required proposals: "
         f"{summary['approval_required']}"
     )
-    print(f"Blocked proposals: {summary['blocked']}")
-    print(f"Executed actions: {summary['executed']}")
+    print(
+        f"Blocked proposals: "
+        f"{summary['blocked']}"
+    )
+    print(
+        f"Executed actions: "
+        f"{summary['executed']}"
+    )
+
+    approval_references = cycle.get(
+        "approval_requests",
+        [],
+    )
+
+    print(
+        "Approval queue references: "
+        f"{len(approval_references)}"
+    )
+
+    for reference in approval_references:
+        request_type = (
+            "new"
+            if reference["new_request"]
+            else "existing"
+        )
+
+        print(
+            "  "
+            f"{reference['symbol']} | "
+            f"{request_type} pending request | "
+            f"{reference['approval_id']}"
+        )
 
 
 def main() -> None:
+    """Run and persist one governed cycle."""
+
     config = load_agent_config()
     memory = load_memory(
-        agent_name=config["identity"]["agent_name"]
+        agent_name=config["identity"][
+            "agent_name"
+        ]
     )
+    approval_queue = load_approval_queue()
 
     cycle = run_agent_cycle(memory)
-    save_agent_cycle(cycle)
 
-    memory = update_memory(memory, cycle)
+    (
+        approval_queue,
+        approval_references,
+    ) = queue_required_approvals(
+        cycle=cycle,
+        queue=approval_queue,
+    )
+
+    cycle["approval_requests"] = (
+        approval_references
+    )
+
+    save_agent_cycle(cycle)
+    save_approval_queue(approval_queue)
+
+    memory = update_memory(
+        memory,
+        cycle,
+    )
     save_memory(memory)
 
-    audit_record = append_audit_record(cycle)
+    audit_record = append_audit_record(
+        cycle
+    )
+
     print_cycle_summary(cycle)
 
     print()
-    print("The autonomous cycle completed safely.")
-    print("No financial transactions were executed.")
-    print(f"Cycle state saved to: {CYCLE_STATE_PATH}")
+    print(
+        "The autonomous cycle completed safely."
+    )
+    print(
+        "No financial transactions were executed."
+    )
+    print(
+        f"Cycle state saved to: "
+        f"{CYCLE_STATE_PATH}"
+    )
     print(
         "Audit record hash: "
         f"{audit_record['record_hash']}"
