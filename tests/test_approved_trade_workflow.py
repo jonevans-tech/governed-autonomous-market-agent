@@ -346,3 +346,49 @@ def test_unknown_approval_id_is_rejected(
             execution_price=50.0,
             policy=policy,
         )
+
+def test_main_prints_clean_rejection(
+    monkeypatch,
+    capsys,
+):
+    import sys
+
+    import src.approved_trade_workflow as workflow
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "approved_trade_workflow.py",
+            "--approval-id",
+            "already-consumed",
+            "--price",
+            "66.54",
+        ],
+    )
+
+    def reject_execution(
+        approval_id,
+        execution_price,
+    ):
+        raise ValueError(
+            "The approval request is not approved."
+        )
+
+    monkeypatch.setattr(
+        workflow,
+        "execute_persisted_approved_trade",
+        reject_execution,
+    )
+
+    workflow.main()
+
+    output = capsys.readouterr().out
+
+    assert "Execution status: REJECTED" in output
+    assert (
+        "The approval request is not approved."
+        in output
+    )
+    assert "Portfolio updated: False" in output
+    assert "Approval consumed: False" in output

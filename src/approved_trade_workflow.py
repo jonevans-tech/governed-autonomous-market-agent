@@ -211,19 +211,26 @@ def parse_arguments() -> argparse.Namespace:
 
     return parser.parse_args()
 
-
 def main() -> None:
     """Run one approved simulated trade."""
 
     arguments = parse_arguments()
 
-    result = execute_persisted_approved_trade(
-        approval_id=arguments.approval_id,
-        execution_price=arguments.price,
-    )
+    try:
+        result = execute_persisted_approved_trade(
+            approval_id=arguments.approval_id,
+            execution_price=arguments.price,
+        )
+    except ValueError as error:
+        result = {
+            "execution_status": "REJECTED",
+            "reason": str(error),
+            "portfolio_updated": False,
+            "approval_consumed": False,
+            "transaction": None,
+        }
 
     print_workflow_result(result)
-
 
 if __name__ == "__main__":
     main()
